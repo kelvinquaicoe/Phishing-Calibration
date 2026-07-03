@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this dataset repository, please cite it and acknowledge the upstream data sources."
+title: "Phishing Calibration Dataset Repository"
+version: "1.0.0"
+authors:
+  - family-names: "Quaicoe"
+    given-names: "Kelvin"
+keywords:
+  - phishing
+  - email dataset
+  - cybersecurity
+  - calibration
+  - NLP
+license: "See upstream dataset licenses"
+repository-code: "."

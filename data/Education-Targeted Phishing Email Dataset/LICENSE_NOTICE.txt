@@ -1,0 +1,19 @@
+GNU LESSER GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+This dataset (EduPhish) is a derivative compilation of publicly available datasets that include components licensed under the GNU Lesser General Public License (LGPL-3.0) and other open licenses.
+
+In accordance with upstream licensing requirements:
+
+This derivative dataset is distributed under LGPL-3.0.
+
+Redistribution and modification are permitted under the terms of LGPL-3.0.
+
+A copy of the full LGPL-3.0 license text must accompany this distribution.
+
+Original copyright and license notices of source datasets must be preserved.
+
+Upstream datasets remain under their respective licenses.
+Users are responsible for complying with the terms of each original dataset.
+
+The authors of EduPhish do not claim ownership of the original email texts and provide this dataset for research purposes only.

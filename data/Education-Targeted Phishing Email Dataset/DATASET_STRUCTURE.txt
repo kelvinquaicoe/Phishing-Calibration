@@ -1,0 +1,5 @@
+eduphish_dataset.csv
+
+Columns recommended:
+- text
+- label
