@@ -184,6 +184,37 @@ The complete experimental results are also available in:
 * `results/master_results_table.csv`
 * `results/master_results_table.md`
 
+## Poster figure generation
+
+Create the combined 2×2 poster panel with:
+
+```bash
+python3 src/generate_poster_figures.py \
+  --results-csv results/master_results_table.csv \
+  --results-dir results \
+  --output-dir graphs/poster_figures
+```
+
+The panel includes:
+- Cross-dataset accuracy line chart
+- Average accuracy by model
+- Average ECE by model
+- Average Brier score by model
+- ECE improvement by model
+- ECE before vs. after temperature scaling
+- Brier Score before vs. after temperature scaling
+- Reliability diagram
+
+The output files include:
+- `graphs/poster_figures/cross_dataset_accuracy.png`
+- `graphs/poster_figures/average_accuracy_by_model.png`
+- `graphs/poster_figures/average_ece_by_model.png`
+- `graphs/poster_figures/average_brier_by_model.png`
+- `graphs/poster_figures/calibration_improvement_ece.png`
+- `graphs/poster_figures/poster_results_summary.png`
+
+
+
 ---
 
 # Technologies

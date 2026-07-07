@@ -73,6 +73,7 @@ Current graphs:
 - `kd_severity_distribution.png`
 - `kd_confidence_distribution.png`
 - `kd_text_length_by_class.png`
+- poster-ready calibration figures in `graphs/poster_figures/`
 
 These cover:
 - dataset size comparison
@@ -96,7 +97,49 @@ Then run:
 python3 generate_graphs.py
 ```
 
-This will create PNG files in the `graphs/` folder.
+For poster figures generated from experiment outputs, run:
+
+```bash
+python3 src/generate_poster_figures.py \
+  --results-csv results/master_results_table.csv \
+  --results-dir results \
+  --output-dir graphs/poster_figures
+```
+
+Add reliability CSVs if you want the reliability diagrams and ECE comparison to be generated directly from calibration outputs. If your master results table includes Brier scores, the script will generate the Brier plot too.
+
+The script expects these exact columns in `master_results_table.csv`:
+- `model`
+- `dataset`
+- `accuracy`
+- `ece_before`
+- `ece_after`
+- `brier_before`
+- `brier_after`
+
+```bash
+python3 src/generate_poster_figures.py \
+  --results-csv results/master_results_table.csv \
+  --results-dir results \
+  --reliability-csv results/*reliability*.csv \
+  --output-dir graphs/poster_figures
+```
+
+This will create PNG files in the `graphs/` folder and in `graphs/poster_figures/`, including:
+- `cross_dataset_accuracy.png`
+- `average_accuracy_by_model.png`
+- `average_ece_by_model.png`
+- `average_brier_by_model.png`
+- `calibration_improvement_ece.png`
+- `ece_before_after.png`
+- `brier_before_after.png`
+- `reliability_before_after.png`
+- `poster_results_summary.png`
+
+The poster-ready summary charts give you:
+- overall model ranking by accuracy
+- overall calibration ranking by ECE and Brier score
+- per-model calibration improvement after temperature scaling
 
 ## Recommended GitHub structure
 
