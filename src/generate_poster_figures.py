@@ -404,6 +404,58 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     return True
 
 
+def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
+    before_path, after_path = choose_reliability_pair(reliability_paths)
+    if before_path is None and after_path is None:
+        ax.text(0.5, 0.5, "No confidence histogram data found", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return False
+
+    if before_path is None:
+        before_path = after_path
+    if after_path is None:
+        after_path = before_path
+
+    before_rows = parse_reliability_rows(read_rows(before_path)) if before_path else []
+    after_rows = parse_reliability_rows(read_rows(after_path)) if after_path else []
+
+    def aggregate_counts(points: list[dict[str, float]]) -> dict[float, float]:
+        counts: dict[float, float] = defaultdict(float)
+        for point in points:
+            if point["count"] <= 0:
+                continue
+            center = round(point["x"] * 100.0, 6)
+            counts[center] += point["count"]
+        return counts
+
+    before_counts = aggregate_counts(before_rows)
+    after_counts = aggregate_counts(after_rows)
+    centers = sorted(set(before_counts) | set(after_counts))
+    if not centers:
+        ax.text(0.5, 0.5, "No confidence histogram data found", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return False
+
+    bin_span = 100.0 / max(len(centers), 1)
+    bar_width = bin_span * 0.38
+    offset = bar_width * 0.55
+
+    before_vals = [before_counts.get(center, 0.0) for center in centers]
+    after_vals = [after_counts.get(center, 0.0) for center in centers]
+
+    ax.bar([center - offset for center in centers], before_vals, width=bar_width, color="#F58518", alpha=0.55, label=f"Before ({before_path.stem})")
+    ax.bar([center + offset for center in centers], after_vals, width=bar_width, color="#54A24B", alpha=0.55, label=f"After ({after_path.stem})")
+
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Predicted Confidence (%)")
+    ax.set_ylabel("Count")
+    ax.set_title("Confidence Histogram")
+    ax.set_xticks(list(range(0, 101, 10)))
+    ax.grid(True, axis="y", alpha=0.2)
+    ax.legend(frameon=False, fontsize=7, loc="upper center", ncol=2)
+    return True
+
+
 def collect_metric_series(rows: list[dict[str, str]], column: str, *, percent: bool = False) -> list[tuple[str, float]] | None:
     if not is_metric_table(rows) or column not in rows[0]:
         return None
@@ -607,9 +659,12 @@ def save_standalone_metric_figure(
 
 
 def save_reliability_figure(reliability_csvs: list[Path], output_dir: Path) -> Path | None:
-    fig, ax = plt.subplots(figsize=(7.5, 6))
-    ok = plot_reliability_panel(ax, reliability_csvs)
-    if not ok:
+    fig, axes = plt.subplots(2, 1, figsize=(8, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1.2]})
+    top_ax, bottom_ax = axes
+
+    top_ok = plot_reliability_panel(top_ax, reliability_csvs)
+    bottom_ok = plot_confidence_histogram(bottom_ax, reliability_csvs)
+    if not top_ok and not bottom_ok:
         plt.close(fig)
         return None
 
