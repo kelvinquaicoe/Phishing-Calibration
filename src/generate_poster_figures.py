@@ -159,19 +159,33 @@ def parse_reliability_rows(rows: list[dict[str, str]]) -> list[dict[str, float]]
     points: list[dict[str, float]] = []
     for idx, row in enumerate(rows):
         lowered = {k.lower(): k for k in row}
-        conf_key = next((lowered[k] for k in lowered if any(t in k for t in ["conf", "prob", "mean_conf"])), None)
-        acc_key = next((lowered[k] for k in lowered if any(t in k for t in ["acc", "accuracy", "empirical", "observed"])), None)
+        conf_key = next(
+            (
+                lowered[k]
+                for k in lowered
+                if k in {"confidence_mean", "mean_confidence", "confidence", "mean_conf"}
+                or any(t in k for t in ["conf", "prob"])
+            ),
+            None,
+        )
+        acc_key = next(
+            (
+                lowered[k]
+                for k in lowered
+                if k in {"accuracy_mean", "observed_accuracy", "empirical_accuracy", "accuracy"}
+                or any(t in k for t in ["acc", "empirical", "observed"])
+            ),
+            None,
+        )
         count_key = next((lowered[k] for k in lowered if any(t in k for t in ["count", "samples", "support", "n"])), None)
         bin_key = next((lowered[k] for k in lowered if any(t in k for t in ["bin", "bucket", "interval", "range", "center", "mid"])), None)
-        lo_key = next((lowered[k] for k in lowered if any(t in k for t in ["lower", "left"])), None)
-        hi_key = next((lowered[k] for k in lowered if any(t in k for t in ["upper", "right"])), None)
 
-        conf = to_float(row.get(conf_key)) if conf_key else None
-        acc = to_float(row.get(acc_key)) if acc_key else None
+        confidence = to_float(row.get(conf_key)) if conf_key else None
+        accuracy = to_float(row.get(acc_key)) if acc_key else None
         count = to_float(row.get(count_key)) if count_key else None
-        x = None
+        x = confidence
 
-        if bin_key:
+        if x is None and bin_key:
             raw_bin = str(row.get(bin_key, ""))
             raw_bin = raw_bin.replace("to", ",").replace("-", ",").replace(":", ",")
             nums = [to_float(part) for part in raw_bin.split(",")]
@@ -181,27 +195,21 @@ def parse_reliability_rows(rows: list[dict[str, str]]) -> list[dict[str, float]]
             elif len(nums) == 1:
                 x = nums[0]
 
-        if x is None and lo_key and hi_key:
-            lo = to_float(row.get(lo_key))
-            hi = to_float(row.get(hi_key))
-            if lo is not None and hi is not None:
-                x = (lo + hi) / 2.0
-
         if x is None:
-            x = conf if conf is not None else idx / max(1, len(rows) - 1)
+            x = (idx + 0.5) / max(1, len(rows))
 
         if x > 1.0:
             x /= 100.0
-        if conf is not None and conf > 1.0:
-            conf /= 100.0
-        if acc is not None and acc > 1.0:
-            acc /= 100.0
+        if confidence is not None and confidence > 1.0:
+            confidence /= 100.0
+        if accuracy is not None and accuracy > 1.0:
+            accuracy /= 100.0
 
         points.append(
             {
                 "x": x,
-                "confidence": conf if conf is not None else x,
-                "accuracy": acc if acc is not None else 0.0,
+                "confidence": confidence if confidence is not None else x,
+                "accuracy": accuracy if accuracy is not None else 0.0,
                 "count": count if count is not None else 1.0,
             }
         )
@@ -233,20 +241,40 @@ def plot_accuracy(ax, rows: list[dict[str, str]]) -> bool:
 
     datasets, models, grouped = series
     x = list(range(len(datasets)))
-    for model in models:
+    markers = ["o", "s", "^", "D", "P", "X", "v", "<", ">"]
+
+    for idx, model in enumerate(models):
         y = []
         for dataset in datasets:
             values = grouped[dataset].get(model, [])
             y.append(sum(values) / len(values) if values else float("nan"))
-        ax.plot(x, y, marker="o", linewidth=2.2, label=model)
+
+        color = f"C{idx % 10}"
+        marker = markers[idx % len(markers)]
+        ax.plot(x, y, marker=marker, linewidth=2.2, markersize=6, color=color)
+
+        valid_points = [(xi, yi) for xi, yi in zip(x, y) if yi == yi]
+        if valid_points:
+            last_x, last_y = valid_points[-1]
+            ax.annotate(
+                model,
+                xy=(last_x, last_y),
+                xytext=(8, 0),
+                textcoords="offset points",
+                ha="left",
+                va="center",
+                fontsize=8,
+                color=color,
+                fontweight="bold",
+            )
 
     ax.set_xticks(x)
     ax.set_xticklabels(datasets, rotation=20, ha="right")
     ax.set_ylabel("Accuracy (%)")
     ax.set_title("Cross-Dataset Accuracy")
     ax.set_ylim(0, 100)
+    ax.set_xlim(-0.25, max(x) + 0.8 if x else 1)
     ax.grid(True, axis="y", alpha=0.2)
-    ax.legend(frameon=False, fontsize=8)
     return True
 
 
@@ -351,8 +379,8 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     after_rows = parse_reliability_rows(read_rows(after_path)) if after_path else []
 
     def row_values(points: list[dict[str, float]]) -> tuple[list[float], list[float]]:
-        xs = [p["x"] * 100.0 for p in points]
-        ys = [p["accuracy"] * 100.0 for p in points]
+        xs = [p["x"] * 100.0 for p in points if p["count"] > 0]
+        ys = [p["accuracy"] * 100.0 for p in points if p["count"] > 0]
         return xs, ys
 
     before_x, before_y = row_values(before_rows)
@@ -366,6 +394,8 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
 
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
+    ax.set_xticks(list(range(0, 101, 10)))
+    ax.set_yticks(list(range(0, 101, 10)))
     ax.set_title("Reliability Diagram")
     ax.set_xlabel("Confidence (%)")
     ax.set_ylabel("Observed Accuracy (%)")
@@ -424,7 +454,8 @@ def plot_average_metric_bars(
     max_value = max(values) if values else 0.0
     pad = max_value * 0.05 if max_value else 0.05
     for bar, value in zip(bars, values):
-        ax.text(bar.get_width() + pad, bar.get_y() + bar.get_height() / 2, format(value, value_fmt), va="center", fontsize=8)
+        label = f"{value:{value_fmt}}%" if percent else format(value, value_fmt)
+        ax.text(bar.get_width() + pad, bar.get_y() + bar.get_height() / 2, label, va="center", fontsize=8)
     ax.set_xlim(0, max_value + pad * 6)
     return True
 
