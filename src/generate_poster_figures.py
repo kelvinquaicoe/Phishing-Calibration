@@ -78,28 +78,36 @@ def resolve_results_csv(explicit: Path | None, results_dir: Path | None) -> Path
     return None
 
 
-def resolve_reliability_csvs(explicit: list[Path] | None, results_dir: Path | None) -> list[Path]:
+def resolve_reliability_csvs(
+    explicit: list[Path] | None,
+    results_dir: Path | None,
+    rows: list[dict[str, str]],
+) -> list[Path]:
     if explicit:
         return [path for path in explicit if path.exists()]
 
-    search_roots: list[Path] = []
-    if results_dir is not None:
-        search_roots.append(results_dir)
-    search_roots.extend([ROOT / "results", ROOT.parent / "results", ROOT, ROOT.parent])
-
-    found: list[Path] = []
-    for base in search_roots:
-        if base.exists():
-            found.extend(base.rglob("*reliab*.csv"))
-            found.extend(base.rglob("*reliability*.csv"))
-
-    unique: list[Path] = []
+    base_dir = results_dir or (ROOT / "results")
+    candidates: list[Path] = []
     seen: set[Path] = set()
-    for path in sorted(found):
-        if path not in seen:
-            seen.add(path)
-            unique.append(path)
-    return unique
+
+    for row in rows:
+        model = str(row.get("model", "")).strip()
+        dataset = str(row.get("dataset", "")).strip().lower()
+        if not model or not dataset:
+            continue
+
+        if dataset == "eduphish":
+            stem = base_dir / f"{model}_calibration_outputs" / model
+        else:
+            stem = base_dir / f"{model}_{dataset}_calibration_outputs" / model
+
+        for suffix in ["_test_predictions_reliability.csv", "_test_predictions_scaled_reliability.csv", "_validation_predictions_reliability.csv"]:
+            path = Path(f"{stem}{suffix}")
+            if path.exists() and path not in seen:
+                seen.add(path)
+                candidates.append(path)
+
+    return candidates
 
 
 def dataset_sort_key(name: str) -> tuple[int, str]:
@@ -667,11 +675,13 @@ def main() -> None:
     args = parser.parse_args()
 
     results_csv = resolve_results_csv(args.results_csv, args.results_dir)
-    reliability_csvs = resolve_reliability_csvs(args.reliability_csv, args.results_dir)
 
     if results_csv is None:
         print("No figures were generated. Could not find master_results_table.csv.")
         return
+
+    rows = read_rows(results_csv)
+    reliability_csvs = resolve_reliability_csvs(args.reliability_csv, args.results_dir, rows)
 
     out_path = build_poster_panel(results_csv, reliability_csvs, args.output_dir)
     if out_path is None:
