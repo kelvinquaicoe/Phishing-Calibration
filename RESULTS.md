@@ -2,6 +2,22 @@
 
 This file summarizes the **calibration** results for the EduPhish test set, before and after **temperature scaling**.
 
+## Figures
+
+Dataset exploration figures are stored in `graphs/datasets/`.
+
+Research result figures are stored in `graphs/results/`.
+
+Key result figures include:
+
+- `cross_dataset_accuracy.png` — compares model accuracy across EduPhish, CEAS_08, Enron, and SpamAssassin.
+- `average_accuracy_by_model.png` — summarizes average model accuracy across all four datasets.
+- `average_ece_by_model.png` — summarizes average Expected Calibration Error after temperature scaling.
+- `average_brier_by_model.png` — summarizes average Brier Score after temperature scaling.
+- `calibration_improvement_ece.png` — shows how much ECE decreased after temperature scaling.
+- `reliability_before_after.png` — shows calibration before and after temperature scaling using standard confidence bins.
+- `poster_results_summary.png` — combined results panel for poster use.
+
 ## EduPhish calibration (test set)
 
 | Model | Accuracy | ECE (before) | ECE (after) | Brier (before) | Brier (after) |
@@ -45,6 +61,8 @@ On SpamAssassin, DeBERTa-v3-small achieved the highest accuracy (94.00%), narrow
 As with the other datasets, temperature scaling generally reduced calibration error and improved probability estimates without changing classification accuracy.
 
 ## Discussion
+
+The result figures show that no single model dominates across all datasets. BERT, DistilBERT, and RoBERTa achieve the strongest average accuracy, while calibration metrics such as ECE and Brier Score reveal additional differences in probability quality. Temperature scaling generally lowers calibration error without changing classification accuracy.
 
 The experiment demonstrates that confidence calibration is highly dependent on dataset characteristics. A model that performs best on one corpus is not necessarily the strongest performer on another. This variability highlights the importance of evaluating phishing detectors across multiple datasets rather than relying on a single benchmark.
 

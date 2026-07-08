@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = ROOT / "graphs" / "poster_figures"
+DEFAULT_OUTPUT_DIR = ROOT / "graphs" / "results"
 PREFERRED_DATASET_ORDER = ["eduphish", "ceas_08", "ceas08", "ceas", "enron", "spamassassin"]
 
 
@@ -251,7 +252,7 @@ def plot_accuracy(ax, rows: list[dict[str, str]]) -> bool:
 
         color = f"C{idx % 10}"
         marker = markers[idx % len(markers)]
-        ax.plot(x, y, marker=marker, linewidth=2.2, markersize=6, color=color)
+        ax.plot(x, y, marker=marker, linewidth=2.2, markersize=8, color=color)
 
         valid_points = [(xi, yi) for xi, yi in zip(x, y) if yi == yi]
         if valid_points:
@@ -363,6 +364,43 @@ def choose_reliability_pair(paths: list[Path]) -> tuple[Path | None, Path | None
     return before, after
 
 
+def rebinned_reliability_points(
+    points: list[dict[str, float]],
+    bins: int = 10,
+) -> list[dict[str, float]]:
+    aggregated = [
+        {"count": 0.0, "confidence_sum": 0.0, "accuracy_sum": 0.0}
+        for _ in range(bins)
+    ]
+
+    for point in points:
+        count = max(0.0, point.get("count", 0.0))
+        confidence = point.get("confidence", point.get("x", 0.0))
+        accuracy = point.get("accuracy", 0.0)
+        if count <= 0 or not math.isfinite(count) or not math.isfinite(confidence) or not math.isfinite(accuracy):
+            continue
+        confidence = min(max(confidence, 0.0), 1.0)
+        idx = min(int(confidence * bins), bins - 1)
+        aggregated[idx]["count"] += count
+        aggregated[idx]["confidence_sum"] += confidence * count
+        aggregated[idx]["accuracy_sum"] += accuracy * count
+
+    rebinned: list[dict[str, float]] = []
+    for idx, bucket in enumerate(aggregated):
+        count = bucket["count"]
+        if count <= 0:
+            continue
+        rebinned.append(
+            {
+                "x": (idx + 0.5) / bins,
+                "confidence": bucket["confidence_sum"] / count,
+                "accuracy": bucket["accuracy_sum"] / count,
+                "count": count,
+            }
+        )
+    return rebinned
+
+
 def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     before_path, after_path = choose_reliability_pair(reliability_paths)
     if before_path is None and after_path is None:
@@ -375,8 +413,8 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     if after_path is None:
         after_path = before_path
 
-    before_rows = parse_reliability_rows(read_rows(before_path)) if before_path else []
-    after_rows = parse_reliability_rows(read_rows(after_path)) if after_path else []
+    before_rows = rebinned_reliability_points(parse_reliability_rows(read_rows(before_path)) if before_path else [], bins=10)
+    after_rows = rebinned_reliability_points(parse_reliability_rows(read_rows(after_path)) if after_path else [], bins=10)
 
     def row_values(points: list[dict[str, float]]) -> tuple[list[float], list[float]]:
         xs = [p["x"] * 100.0 for p in points if p["count"] > 0]
@@ -396,7 +434,7 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     ax.set_ylim(0, 100)
     ax.set_xticks(list(range(0, 101, 10)))
     ax.set_yticks(list(range(0, 101, 10)))
-    ax.set_title("Reliability Diagram")
+    ax.set_title("Reliability Diagram (10 Bins)")
     ax.set_xlabel("Confidence (%)")
     ax.set_ylabel("Observed Accuracy (%)")
     ax.grid(True, alpha=0.2)
@@ -422,9 +460,11 @@ def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
     def aggregate_counts(points: list[dict[str, float]]) -> dict[float, float]:
         counts: dict[float, float] = defaultdict(float)
         for point in points:
-            if point["count"] <= 0:
+            if point["count"] <= 0 or not math.isfinite(point["count"]) or not math.isfinite(point["confidence"]):
                 continue
-            center = round(point["x"] * 100.0, 6)
+            confidence = min(max(point["confidence"], 0.0), 1.0)
+            bin_idx = min(int(confidence * 10), 9)
+            center = (bin_idx + 0.5) * 10.0
             counts[center] += point["count"]
         return counts
 
@@ -436,7 +476,7 @@ def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
         ax.set_axis_off()
         return False
 
-    bin_span = 100.0 / max(len(centers), 1)
+    bin_span = 10.0
     bar_width = bin_span * 0.38
     offset = bar_width * 0.55
 
@@ -449,14 +489,20 @@ def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
     ax.set_xlim(0, 100)
     ax.set_xlabel("Predicted Confidence (%)")
     ax.set_ylabel("Count")
-    ax.set_title("Confidence Histogram")
+    ax.set_title("Confidence Histogram (10 Bins)")
     ax.set_xticks(list(range(0, 101, 10)))
     ax.grid(True, axis="y", alpha=0.2)
     ax.legend(frameon=False, fontsize=7, loc="upper center", ncol=2)
     return True
 
 
-def collect_metric_series(rows: list[dict[str, str]], column: str, *, percent: bool = False) -> list[tuple[str, float]] | None:
+def collect_metric_series(
+    rows: list[dict[str, str]],
+    column: str,
+    *,
+    percent: bool = False,
+    ascending: bool = False,
+) -> list[tuple[str, float]] | None:
     if not is_metric_table(rows) or column not in rows[0]:
         return None
 
@@ -474,7 +520,7 @@ def collect_metric_series(rows: list[dict[str, str]], column: str, *, percent: b
         return None
 
     series = [(model, sum(values) / len(values)) for model, values in grouped.items()]
-    series.sort(key=lambda item: item[1], reverse=True)
+    series.sort(key=lambda item: item[1], reverse=not ascending)
     return series
 
 
@@ -488,8 +534,9 @@ def plot_average_metric_bars(
     percent: bool = False,
     value_fmt: str = ".2f",
     color: str = "#4C78A8",
+    ascending: bool = False,
 ) -> bool:
-    series = collect_metric_series(rows, column, percent=percent)
+    series = collect_metric_series(rows, column, percent=percent, ascending=ascending)
     if series is None:
         ax.text(0.5, 0.5, f"No {column} data found", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
@@ -599,9 +646,20 @@ def save_average_metric_figure(
     percent: bool = False,
     value_fmt: str = ".2f",
     color: str = "#4C78A8",
+    ascending: bool = False,
 ) -> Path | None:
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
-    ok = plot_average_metric_bars(ax, rows, column, title, xlabel, percent=percent, value_fmt=value_fmt, color=color)
+    ok = plot_average_metric_bars(
+        ax,
+        rows,
+        column,
+        title,
+        xlabel,
+        percent=percent,
+        value_fmt=value_fmt,
+        color=color,
+        ascending=ascending,
+    )
     if not ok:
         plt.close(fig)
         return None
@@ -622,7 +680,7 @@ def save_calibration_improvement_figure(
     metric: str = "ece",
 ) -> Path | None:
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
-    title = f"Calibration Improvement in {metric.upper()} (Before - After)"
+    title = f"Calibration Improvement After Temperature Scaling"
     ok = plot_calibration_improvement(ax, rows, metric=metric, title=title)
     if not ok:
         plt.close(fig)
@@ -687,35 +745,38 @@ def build_poster_panel(results_csv: Path, reliability_csvs: list[Path], output_d
     save_average_metric_figure(
         rows,
         "accuracy",
-        "Average Accuracy by Model",
+        "Average Accuracy by Model Across Four Datasets",
         "Accuracy (%)",
         "average_accuracy_by_model.png",
         output_dir,
         percent=True,
         value_fmt=".1f",
         color="#4C78A8",
+        ascending=False,
     )
     save_average_metric_figure(
         rows,
         "ece_after",
-        "Average ECE by Model (After Temperature Scaling)",
+        "Average Expected Calibration Error (ECE) by Model Across Four Datasets",
         "ECE (%)",
         "average_ece_by_model.png",
         output_dir,
         percent=True,
         value_fmt=".2f",
         color="#F58518",
+        ascending=True,
     )
     save_average_metric_figure(
         rows,
         "brier_after",
-        "Average Brier Score by Model (After Temperature Scaling)",
+        "Average Brier Score by Model Across Four Datasets",
         "Brier Score",
         "average_brier_by_model.png",
         output_dir,
         percent=False,
         value_fmt=".4f",
         color="#B279A2",
+        ascending=True,
     )
     save_calibration_improvement_figure(rows, "calibration_improvement_ece.png", output_dir, metric="ece")
     save_standalone_metric_figure(

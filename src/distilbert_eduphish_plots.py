@@ -88,17 +88,26 @@ def plot_reliability_diagram(before, after, output_path: Path, bins: int = 10) -
         after_labels, after_preds, after_confs, bins=bins
     )
 
-    bin_edges = [i / bins for i in range(bins)]
-    width = 1.0 / bins * 0.9
+    bin_centers = [(i + 0.5) / bins for i in range(bins)]
+    width = 1.0 / bins * 0.85
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True, sharey=True)
     for ax, title, avg_confs, avg_accs, totals in [
         (axes[0], "Before temperature scaling", before_avg_confs, before_avg_accs, before_totals),
         (axes[1], "After temperature scaling", after_avg_confs, after_avg_accs, after_totals),
     ]:
+        non_empty = [
+            (center, conf, acc)
+            for center, conf, acc, total in zip(bin_centers, avg_confs, avg_accs, totals)
+            if total > 0
+        ]
         ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1, label="Perfect calibration")
-        ax.bar(bin_edges, avg_accs, width=width, align="edge", alpha=0.7, edgecolor="black", label="Accuracy")
-        ax.plot([c for c, t in zip(avg_confs, totals) if t > 0], [a for a, t in zip(avg_accs, totals) if t > 0], marker="o", color="#1f77b4", linewidth=1.5, label="Empirical")
+        if non_empty:
+            xs = [center for center, _, _ in non_empty]
+            confs = [conf for _, conf, _ in non_empty]
+            accs = [acc for _, _, acc in non_empty]
+            ax.bar(xs, accs, width=width, align="center", alpha=0.7, edgecolor="black", label="Accuracy")
+            ax.plot(confs, accs, marker="o", color="#1f77b4", linewidth=1.5, label="Empirical")
         ax.set_title(title)
         ax.set_xlabel("Confidence")
         ax.set_ylabel("Accuracy")
@@ -113,7 +122,7 @@ def plot_reliability_diagram(before, after, output_path: Path, bins: int = 10) -
     plt.close(fig)
 
 
-def plot_confidence_histogram(before_confs: List[float], after_confs: List[float], output_path: Path, bins: int = 20) -> None:
+def plot_confidence_histogram(before_confs: List[float], after_confs: List[float], output_path: Path, bins: int = 10) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(before_confs, bins=bins, alpha=0.55, label="Before scaling", color="#1f77b4", edgecolor="white")
     ax.hist(after_confs, bins=bins, alpha=0.55, label="After scaling", color="#ff7f0e", edgecolor="white")

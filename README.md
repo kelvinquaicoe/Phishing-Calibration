@@ -51,10 +51,13 @@ Balanced evaluation subsets were created for the larger datasets to provide cons
 # Repository Layout
 
 ```text
-data/      - Datasets, train/test splits, graphs, dataset cards, citations
+data/      - Datasets, train/test splits, dataset cards, citations
 docs/      - Project documentation (models, datasets, methodology)
 models/    - Local Hugging Face model/tokenizer files (ignored by Git)
-results/   - Calibration outputs, metrics, reliability diagrams, plots
+graphs/    - Figure outputs
+graphs/datasets/ - Organized dataset-exploration figures
+graphs/results/ - Poster-ready research-result figures
+results/   - Calibration outputs, metrics, reliability CSVs
 src/       - Training, calibration, evaluation, and automation scripts
 ```
 
@@ -192,26 +195,25 @@ Create the combined 2×2 poster panel with:
 python3 src/generate_poster_figures.py \
   --results-csv results/master_results_table.csv \
   --results-dir results \
-  --output-dir graphs/poster_figures
+  --output-dir graphs/results
 ```
 
 The panel includes:
 - Cross-dataset accuracy line chart
-- Average accuracy by model
-- Average ECE by model
-- Average Brier score by model
-- ECE improvement by model
-- ECE before vs. after temperature scaling
-- Brier Score before vs. after temperature scaling
-- Reliability diagram
+- Average accuracy by model across four datasets
+- Average expected calibration error (ECE) across four datasets
+- Average Brier score by model across four datasets
+- Calibration improvement after temperature scaling
+- Reliability diagram with standard calibration bins
 
 The output files include:
-- `graphs/poster_figures/cross_dataset_accuracy.png`
-- `graphs/poster_figures/average_accuracy_by_model.png`
-- `graphs/poster_figures/average_ece_by_model.png`
-- `graphs/poster_figures/average_brier_by_model.png`
-- `graphs/poster_figures/calibration_improvement_ece.png`
-- `graphs/poster_figures/poster_results_summary.png`
+- `graphs/results/cross_dataset_accuracy.png`
+- `graphs/results/average_accuracy_by_model.png`
+- `graphs/results/average_ece_by_model.png`
+- `graphs/results/average_brier_by_model.png`
+- `graphs/results/calibration_improvement_ece.png`
+- `graphs/results/reliability_before_after.png`
+- `graphs/results/poster_results_summary.png`
 
 
 
