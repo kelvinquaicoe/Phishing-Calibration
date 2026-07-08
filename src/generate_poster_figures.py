@@ -111,7 +111,25 @@ def resolve_reliability_csvs(
     return candidates
 
 
+def resolve_preferred_reliability_csvs(results_dir: Path | None, model: str, dataset: str) -> list[Path]:
+    base_dir = results_dir or (ROOT / "results")
+    dataset_key = dataset.lower().strip()
+    model_key = model.strip()
+
+    if dataset_key == "eduphish":
+        stem = base_dir / f"{model_key}_calibration_outputs" / model_key
+    else:
+        stem = base_dir / f"{model_key}_{dataset_key}_calibration_outputs" / model_key
+
+    preferred = [
+        Path(f"{stem}_test_predictions_reliability.csv"),
+        Path(f"{stem}_test_predictions_scaled_reliability.csv"),
+    ]
+    return [path for path in preferred if path.exists()]
+
+
 def dataset_sort_key(name: str) -> tuple[int, str]:
+
     lower = name.lower()
     for idx, token in enumerate(PREFERRED_DATASET_ORDER):
         if token in lower:
@@ -367,6 +385,7 @@ def choose_reliability_pair(paths: list[Path]) -> tuple[Path | None, Path | None
 def rebinned_reliability_points(
     points: list[dict[str, float]],
     bins: int = 10,
+    min_count: float = 5.0,
 ) -> list[dict[str, float]]:
     aggregated = [
         {"count": 0.0, "confidence_sum": 0.0, "accuracy_sum": 0.0}
@@ -388,7 +407,7 @@ def rebinned_reliability_points(
     rebinned: list[dict[str, float]] = []
     for idx, bucket in enumerate(aggregated):
         count = bucket["count"]
-        if count <= 0:
+        if count < min_count:
             continue
         rebinned.append(
             {
@@ -401,7 +420,16 @@ def rebinned_reliability_points(
     return rebinned
 
 
-def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
+def plot_reliability_panel(
+    ax,
+    reliability_paths: list[Path],
+    *,
+    model_name: str = "DistilBERT",
+    dataset_name: str = "EduPhish",
+    before_label: str = "Before Temperature Scaling",
+    after_label: str = "After Temperature Scaling",
+    min_bin_count: float = 5.0,
+) -> bool:
     before_path, after_path = choose_reliability_pair(reliability_paths)
     if before_path is None and after_path is None:
         ax.text(0.5, 0.5, "No reliability data found", ha="center", va="center", transform=ax.transAxes)
@@ -413,8 +441,12 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     if after_path is None:
         after_path = before_path
 
-    before_rows = rebinned_reliability_points(parse_reliability_rows(read_rows(before_path)) if before_path else [], bins=10)
-    after_rows = rebinned_reliability_points(parse_reliability_rows(read_rows(after_path)) if after_path else [], bins=10)
+    before_rows = rebinned_reliability_points(
+        parse_reliability_rows(read_rows(before_path)) if before_path else [], bins=10, min_count=min_bin_count
+    )
+    after_rows = rebinned_reliability_points(
+        parse_reliability_rows(read_rows(after_path)) if after_path else [], bins=10, min_count=min_bin_count
+    )
 
     def row_values(points: list[dict[str, float]]) -> tuple[list[float], list[float]]:
         xs = [p["x"] * 100.0 for p in points if p["count"] > 0]
@@ -426,15 +458,15 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
 
     ax.plot([0, 100], [0, 100], linestyle="--", color="gray", linewidth=1, label="Perfect calibration")
     if before_rows:
-        ax.plot(before_x, before_y, marker="o", linewidth=2.2, color="#F58518", label=f"Before ({before_path.stem})")
+        ax.plot(before_x, before_y, marker="o", linewidth=2.2, color="#F58518", label=before_label)
     if after_rows:
-        ax.plot(after_x, after_y, marker="s", linewidth=2.2, color="#54A24B", label=f"After ({after_path.stem})")
+        ax.plot(after_x, after_y, marker="s", linewidth=2.2, color="#54A24B", label=after_label)
 
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
     ax.set_xticks(list(range(0, 101, 10)))
     ax.set_yticks(list(range(0, 101, 10)))
-    ax.set_title("Reliability Diagram (10 Bins)")
+    ax.set_title(f"Reliability Diagram Before and After Temperature Scaling ({model_name} on {dataset_name})")
     ax.set_xlabel("Confidence (%)")
     ax.set_ylabel("Observed Accuracy (%)")
     ax.grid(True, alpha=0.2)
@@ -442,7 +474,15 @@ def plot_reliability_panel(ax, reliability_paths: list[Path]) -> bool:
     return True
 
 
-def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
+def plot_confidence_histogram(
+    ax,
+    reliability_paths: list[Path],
+    *,
+    model_name: str = "DistilBERT",
+    dataset_name: str = "EduPhish",
+    before_label: str = "Before Temperature Scaling",
+    after_label: str = "After Temperature Scaling",
+) -> bool:
     before_path, after_path = choose_reliability_pair(reliability_paths)
     if before_path is None and after_path is None:
         ax.text(0.5, 0.5, "No confidence histogram data found", ha="center", va="center", transform=ax.transAxes)
@@ -470,8 +510,8 @@ def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
 
     before_counts = aggregate_counts(before_rows)
     after_counts = aggregate_counts(after_rows)
-    centers = sorted(set(before_counts) | set(after_counts))
-    if not centers:
+    centers = [(i + 0.5) * 10.0 for i in range(10)]
+    if not any(before_counts.get(center, 0.0) or after_counts.get(center, 0.0) for center in centers):
         ax.text(0.5, 0.5, "No confidence histogram data found", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
         return False
@@ -483,18 +523,17 @@ def plot_confidence_histogram(ax, reliability_paths: list[Path]) -> bool:
     before_vals = [before_counts.get(center, 0.0) for center in centers]
     after_vals = [after_counts.get(center, 0.0) for center in centers]
 
-    ax.bar([center - offset for center in centers], before_vals, width=bar_width, color="#F58518", alpha=0.55, label=f"Before ({before_path.stem})")
-    ax.bar([center + offset for center in centers], after_vals, width=bar_width, color="#54A24B", alpha=0.55, label=f"After ({after_path.stem})")
+    ax.bar([center - offset for center in centers], before_vals, width=bar_width, color="#4C78A8", alpha=0.45, edgecolor="white", label=before_label)
+    ax.bar([center + offset for center in centers], after_vals, width=bar_width, color="#F58518", alpha=0.45, edgecolor="white", label=after_label)
 
     ax.set_xlim(0, 100)
     ax.set_xlabel("Predicted Confidence (%)")
-    ax.set_ylabel("Count")
-    ax.set_title("Confidence Histogram (10 Bins)")
+    ax.set_ylabel("Prediction Count")
+    ax.set_title(f"Confidence Histogram ({model_name} on {dataset_name})")
     ax.set_xticks(list(range(0, 101, 10)))
     ax.grid(True, axis="y", alpha=0.2)
     ax.legend(frameon=False, fontsize=7, loc="upper center", ncol=2)
     return True
-
 
 def collect_metric_series(
     rows: list[dict[str, str]],
@@ -716,12 +755,34 @@ def save_standalone_metric_figure(
     return out_path
 
 
-def save_reliability_figure(reliability_csvs: list[Path], output_dir: Path) -> Path | None:
+def save_reliability_figure(
+    reliability_csvs: list[Path],
+    output_dir: Path,
+    *,
+    model_name: str = "DistilBERT",
+    dataset_name: str = "EduPhish",
+    min_bin_count: float = 5.0,
+) -> Path | None:
     fig, axes = plt.subplots(2, 1, figsize=(8, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1.2]})
     top_ax, bottom_ax = axes
 
-    top_ok = plot_reliability_panel(top_ax, reliability_csvs)
-    bottom_ok = plot_confidence_histogram(bottom_ax, reliability_csvs)
+    top_ok = plot_reliability_panel(
+        top_ax,
+        reliability_csvs,
+        model_name=model_name,
+        dataset_name=dataset_name,
+        before_label="Before Temperature Scaling",
+        after_label="After Temperature Scaling",
+        min_bin_count=min_bin_count,
+    )
+    bottom_ok = plot_confidence_histogram(
+        bottom_ax,
+        reliability_csvs,
+        model_name=model_name,
+        dataset_name=dataset_name,
+        before_label="Before Temperature Scaling",
+        after_label="After Temperature Scaling",
+    )
     if not top_ok and not bottom_ok:
         plt.close(fig)
         return None
@@ -740,6 +801,7 @@ def build_poster_panel(results_csv: Path, reliability_csvs: list[Path], output_d
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    poster_reliability_csvs = resolve_preferred_reliability_csvs(results_csv.parent, "distilbert", "eduphish") or reliability_csvs
 
     save_standalone_accuracy_figure(rows, output_dir)
     save_average_metric_figure(
@@ -795,7 +857,13 @@ def build_poster_panel(results_csv: Path, reliability_csvs: list[Path], output_d
         "brier_before_after.png",
         output_dir,
     )
-    save_reliability_figure(reliability_csvs, output_dir)
+    save_reliability_figure(
+        poster_reliability_csvs,
+        output_dir,
+        model_name="DistilBERT",
+        dataset_name="EduPhish",
+        min_bin_count=5,
+    )
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
@@ -803,7 +871,15 @@ def build_poster_panel(results_csv: Path, reliability_csvs: list[Path], output_d
     plot_accuracy(axes[0], rows)
     plot_before_after_metric(axes[1], rows, "ece", "ECE Before vs After", "ECE (%)")
     plot_before_after_metric(axes[2], rows, "brier", "Brier Score Before vs After", "Brier Score")
-    plot_reliability_panel(axes[3], reliability_csvs)
+    plot_reliability_panel(
+        axes[3],
+        poster_reliability_csvs,
+        model_name="DistilBERT",
+        dataset_name="EduPhish",
+        before_label="Before Temperature Scaling",
+        after_label="After Temperature Scaling",
+        min_bin_count=5,
+    )
 
     fig.suptitle("Poster Results Summary", fontsize=18, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.96))

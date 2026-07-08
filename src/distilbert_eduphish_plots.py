@@ -77,7 +77,16 @@ def compute_reliability_bins(
     return avg_confs, avg_accs, totals
 
 
-def plot_reliability_diagram(before, after, output_path: Path, bins: int = 10) -> None:
+def plot_reliability_diagram(
+    before,
+    after,
+    output_path: Path,
+    bins: int = 10,
+    *,
+    model_name: str = "DistilBERT",
+    dataset_name: str = "EduPhish",
+    min_bin_count: int = 5,
+) -> None:
     before_labels, before_preds, before_confs = before
     after_labels, after_preds, after_confs = after
 
@@ -89,49 +98,60 @@ def plot_reliability_diagram(before, after, output_path: Path, bins: int = 10) -
     )
 
     bin_centers = [(i + 0.5) / bins for i in range(bins)]
-    width = 1.0 / bins * 0.85
+    width = 1.0 / bins * 0.8
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True, sharey=True)
     for ax, title, avg_confs, avg_accs, totals in [
-        (axes[0], "Before temperature scaling", before_avg_confs, before_avg_accs, before_totals),
-        (axes[1], "After temperature scaling", after_avg_confs, after_avg_accs, after_totals),
+        (axes[0], "Before Temperature Scaling", before_avg_confs, before_avg_accs, before_totals),
+        (axes[1], "After Temperature Scaling", after_avg_confs, after_avg_accs, after_totals),
     ]:
-        non_empty = [
+        visible_points = [
             (center, conf, acc)
             for center, conf, acc, total in zip(bin_centers, avg_confs, avg_accs, totals)
-            if total > 0
+            if total >= min_bin_count
         ]
         ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1, label="Perfect calibration")
-        if non_empty:
-            xs = [center for center, _, _ in non_empty]
-            confs = [conf for _, conf, _ in non_empty]
-            accs = [acc for _, _, acc in non_empty]
-            ax.bar(xs, accs, width=width, align="center", alpha=0.7, edgecolor="black", label="Accuracy")
-            ax.plot(confs, accs, marker="o", color="#1f77b4", linewidth=1.5, label="Empirical")
+        if visible_points:
+            xs = [center for center, _, _ in visible_points]
+            confs = [conf for _, conf, _ in visible_points]
+            accs = [acc for _, _, acc in visible_points]
+            ax.bar(xs, accs, width=width, align="center", alpha=0.55, edgecolor="black", label=title)
+            ax.plot(confs, accs, marker="o", color="#1f77b4", linewidth=1.6, label=title)
         ax.set_title(title)
         ax.set_xlabel("Confidence")
         ax.set_ylabel("Accuracy")
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.grid(alpha=0.2)
-        ax.legend(loc="lower right", fontsize=8)
+        ax.legend(loc="lower right", fontsize=8, frameon=False)
 
-    fig.suptitle("DistilBERT reliability diagrams on EduPhish test set", fontsize=14)
+    fig.suptitle(
+        f"Reliability Diagram Before and After Temperature Scaling ({model_name} on {dataset_name})",
+        fontsize=14,
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_confidence_histogram(before_confs: List[float], after_confs: List[float], output_path: Path, bins: int = 10) -> None:
+def plot_confidence_histogram(
+    before_confs: List[float],
+    after_confs: List[float],
+    output_path: Path,
+    bins: int = 10,
+    *,
+    model_name: str = "DistilBERT",
+    dataset_name: str = "EduPhish",
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(before_confs, bins=bins, alpha=0.55, label="Before scaling", color="#1f77b4", edgecolor="white")
-    ax.hist(after_confs, bins=bins, alpha=0.55, label="After scaling", color="#ff7f0e", edgecolor="white")
-    ax.set_title("Prediction confidence distribution")
+    ax.hist(before_confs, bins=bins, alpha=0.5, label="Before Temperature Scaling", color="#1f77b4", edgecolor="white")
+    ax.hist(after_confs, bins=bins, alpha=0.5, label="After Temperature Scaling", color="#ff7f0e", edgecolor="white")
+    ax.set_title(f"Confidence Histogram ({model_name} on {dataset_name})")
     ax.set_xlabel("Confidence")
-    ax.set_ylabel("Count")
+    ax.set_ylabel("Prediction Count")
     ax.set_xlim(0, 1)
     ax.grid(alpha=0.2)
-    ax.legend()
+    ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -150,8 +170,17 @@ def main() -> None:
         (before_labels, before_preds, before_confidences),
         (after_labels, after_preds, after_confidences),
         RELIABILITY_PLOT,
+        model_name="DistilBERT",
+        dataset_name="EduPhish",
+        min_bin_count=5,
     )
-    plot_confidence_histogram(before_confidences, after_confidences, CONFIDENCE_PLOT)
+    plot_confidence_histogram(
+        before_confidences,
+        after_confidences,
+        CONFIDENCE_PLOT,
+        model_name="DistilBERT",
+        dataset_name="EduPhish",
+    )
 
     print(f"Saved reliability diagram -> {RELIABILITY_PLOT}")
     print(f"Saved confidence histogram -> {CONFIDENCE_PLOT}")
